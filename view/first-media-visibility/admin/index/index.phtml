@@ -1,0 +1,331 @@
+<?php
+/** @var array $rows */
+/** @var int $total */
+/** @var int $page */
+/** @var int $perPage */
+/** @var string $sort */
+/** @var string $order */
+
+$translate = $this->plugin('translate');
+$escape = $this->plugin('escapeHtml');
+$escapeAttr = $this->plugin('escapeHtmlAttr');
+
+$total = (int) ($total ?? 0);
+$page = max(1, (int) ($page ?? 1));
+$perPage = max(1, (int) ($perPage ?? 100));
+$sort = (string) ($sort ?? 'item_title');
+$order = (string) ($order ?? 'asc');
+
+$pages = (int) max(1, ceil($total / $perPage));
+
+$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order) {
+  $base = [
+    'page' => $page,
+    'per_page' => $perPage,
+    'sort' => $sort,
+    'order' => $order,
+  ];
+  return $this->url('admin/first-media-visibility', [], ['query' => array_merge($base, $overrides)]);
+};
+
+$nextOrderFor = function (string $field) use ($sort, $order): string {
+  if ($sort !== $field) {
+    return 'asc';
+  }
+  return $order === 'asc' ? 'desc' : 'asc';
+};
+
+$csrfName = '';
+$csrfValue = '';
+if (isset($confirmForm)) {
+  $csrfElement = $confirmForm->get($confirmForm->getName() . '_csrf');
+  $csrfName = (string) $csrfElement->getName();
+  $csrfValue = (string) $csrfElement->getValue();
+}
+?>
+
+<?= $this->pageTitle($translate('First media visibility')) ?>
+
+<style>
+  .fmv-table {
+    table-layout: fixed;
+    width: 100%;
+  }
+  .fmv-table .fmv-col-thumb {
+    width: 64px;
+  }
+  .fmv-table .fmv-col-vis {
+    width: 56px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .fmv-table .fmv-col-action {
+    width: 96px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .fmv-table .fmv-media-title {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+  .fmv-table .fmv-thumb {
+    width: 48px;
+    height: auto;
+    display: block;
+  }
+</style>
+
+<form method="get" style="margin-bottom: 12px; display:flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+  <label for="fmv-per-page"><?= $escape($translate('Rows per page')) ?></label>
+  <input
+    id="fmv-per-page"
+    type="number"
+    name="per_page"
+    min="1"
+    max="1000"
+    value="<?= (int) $perPage ?>"
+    style="width: 100px;"
+  >
+  <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
+  <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+  <input type="hidden" name="page" value="1">
+  <button type="submit" class="button"><?= $escape($translate('Apply')) ?></button>
+  <span><?= $escape(sprintf($translate('Total items: %d'), $total)) ?></span>
+</form>
+
+<?php if ($pages > 1): ?>
+  <form method="get" style="margin-bottom: 12px; display:flex; align-items:center; gap:6px; flex-wrap: wrap;">
+    <label for="fmv-page-jump-top"><?= $escape($translate('Jump to page')) ?></label>
+    <input
+      id="fmv-page-jump-top"
+      type="number"
+      name="page"
+      min="1"
+      max="<?= (int) $pages ?>"
+      value="<?= (int) $page ?>"
+      style="width:72px;"
+    >
+    <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
+    <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
+    <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+    <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
+  </form>
+<?php endif; ?>
+
+<div id="fmv-csrf" style="display:none;">
+  <?php if (isset($confirmForm)): ?>
+    <?= $this->formElement($confirmForm->get($confirmForm->getName() . '_csrf')) ?>
+  <?php endif; ?>
+</div>
+
+<table class="tablesaw tablesaw-stack fmv-table" data-tablesaw-mode="stack">
+  <thead>
+    <tr>
+      <th class="fmv-col-thumb"><?= $escape($translate('Thumbnail')) ?></th>
+      <th>
+        <?php
+        $itemSortUrl = $buildUrl([
+          'sort' => 'item_title',
+          'order' => $nextOrderFor('item_title'),
+          'page' => 1,
+        ]);
+        ?>
+        <a href="<?= $escapeAttr($itemSortUrl) ?>">
+          <?= $escape($translate('Item title')) ?>
+        </a>
+      </th>
+      <th>
+        <?php
+        $mediaSortUrl = $buildUrl([
+          'sort' => 'media_title',
+          'order' => $nextOrderFor('media_title'),
+          'page' => 1,
+        ]);
+        ?>
+        <a href="<?= $escapeAttr($mediaSortUrl) ?>">
+          <?= $escape($translate('First media name')) ?>
+        </a>
+      </th>
+      <th class="fmv-col-vis"><?= $escape($translate('Visibility')) ?></th>
+      <th class="fmv-col-action"><?= $escape($translate('Action')) ?></th>
+    </tr>
+  </thead>
+  <tbody>
+    <?php if (!empty($rows)): ?>
+      <?php foreach ($rows as $row): ?>
+        <?php
+        $itemId = (int) ($row['item_id'] ?? 0);
+        $mediaId = (int) ($row['media_id'] ?? 0);
+        $isPublic = isset($row['media_is_public']) ? (int) $row['media_is_public'] === 1 : NULL;
+        $iconClass = $isPublic === TRUE ? 'o-icon-public' : 'o-icon-private';
+        $iconLabel = $isPublic === TRUE ? $translate('Public') : $translate('Private');
+        ?>
+        <tr data-media-id="<?= $mediaId ?>">
+          <td class="fmv-col-thumb">
+            <?php if (!empty($row['thumb_url'])): ?>
+              <img
+                src="<?= $escapeAttr((string) $row['thumb_url']) ?>"
+                alt=""
+                class="fmv-thumb"
+              >
+            <?php else: ?>
+              <span>-</span>
+            <?php endif; ?>
+          </td>
+          <td>
+            <?php
+            $itemUrl = $this->url('admin/id', [
+              'controller' => 'item',
+              'action' => 'edit',
+              'id' => $itemId,
+            ]);
+            $itemTitleFull = (string) $row['item_title'];
+            $itemTitleShort = $itemTitleFull;
+            if (function_exists('mb_strimwidth')) {
+              $itemTitleShort = mb_strimwidth($itemTitleFull, 0, 50, '...', 'UTF-8');
+            }
+            elseif (strlen($itemTitleFull) > 50) {
+              $itemTitleShort = substr($itemTitleFull, 0, 47) . '...';
+            }
+            ?>
+            <a
+              href="<?= $escapeAttr($itemUrl) ?>"
+              target="_blank"
+              rel="noopener"
+              title="<?= $escapeAttr($itemTitleFull) ?>"
+            >
+              <?= $escape($itemTitleShort) ?>
+            </a>
+          </td>
+          <td class="fmv-media-title"><?= $escape((string) $row['media_title']) ?></td>
+          <td class="fmv-col-vis">
+            <?php if ($mediaId > 0): ?>
+              <span
+                class="js-visibility <?= $escapeAttr($iconClass) ?>"
+                title="<?= $escapeAttr($iconLabel) ?>"
+                aria-label="<?= $escapeAttr($iconLabel) ?>"
+              ></span>
+            <?php else: ?>
+              <span>-</span>
+            <?php endif; ?>
+          </td>
+          <td class="fmv-col-action">
+            <?php if ($mediaId > 0): ?>
+              <button
+                type="button"
+                class="button js-toggle-first-media"
+                data-media-id="<?= $mediaId ?>"
+              >
+                <?= $escape($translate('Toggle')) ?>
+              </button>
+            <?php else: ?>
+              <button type="button" class="button" disabled><?= $escape($translate('No media')) ?></button>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+    <?php else: ?>
+      <tr>
+        <td colspan="5"><?= $escape($translate('No items found.')) ?></td>
+      </tr>
+    <?php endif; ?>
+  </tbody>
+</table>
+
+<?php if ($pages > 1): ?>
+  <nav class="pagination" style="margin-top: 12px; display:flex; gap:6px; align-items:center; flex-wrap: wrap;">
+    <?php if ($page > 1): ?>
+      <a class="button" href="<?= $escapeAttr($buildUrl(['page' => $page - 1])) ?>"><?= $escape($translate('Previous')) ?></a>
+    <?php endif; ?>
+    <span><?= $escape(sprintf($translate('Page %d / %d'), $page, $pages)) ?></span>
+    <?php if ($page < $pages): ?>
+      <a class="button" href="<?= $escapeAttr($buildUrl(['page' => $page + 1])) ?>"><?= $escape($translate('Next')) ?></a>
+    <?php endif; ?>
+    <form method="get" style="display:flex; align-items:center; gap:6px; margin:0 0 0 8px;">
+      <label for="fmv-page-jump"><?= $escape($translate('Jump to page')) ?></label>
+      <input
+        id="fmv-page-jump"
+        type="number"
+        name="page"
+        min="1"
+        max="<?= (int) $pages ?>"
+        value="<?= (int) $page ?>"
+        style="width:72px;"
+      >
+      <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
+      <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
+      <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+      <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
+    </form>
+  </nav>
+<?php endif; ?>
+
+<script>
+  (function() {
+    const toggleUrl = <?= json_encode($this->url('admin/first-media-visibility/toggle')) ?>;
+    const csrfInput = document.querySelector('#fmv-csrf input[type="hidden"]');
+
+    function setBusy(button, busy) {
+      button.disabled = busy;
+      button.style.opacity = busy ? '0.7' : '1';
+    }
+
+    document.querySelectorAll('.js-toggle-first-media').forEach(function(button) {
+      button.addEventListener('click', function() {
+        const mediaId = button.getAttribute('data-media-id');
+        if (!mediaId) {
+          return;
+        }
+        if (!csrfInput) {
+          alert('CSRF token not found.');
+          return;
+        }
+
+        setBusy(button, true);
+
+        const body = new URLSearchParams();
+        body.set('media_id', mediaId);
+        body.set(csrfInput.name, csrfInput.value);
+
+        fetch(toggleUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: body.toString()
+        })
+          .then(function(response) {
+            return response.json().then(function(data) {
+              return { ok: response.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok || !result.data || !result.data.ok) {
+              const message = (result.data && result.data.message)
+                ? result.data.message
+                : 'Failed to toggle visibility.';
+              throw new Error(message);
+            }
+
+            const row = button.closest('tr');
+            const icon = row ? row.querySelector('.js-visibility') : null;
+            if (icon) {
+              icon.classList.remove('o-icon-public', 'o-icon-private');
+              icon.classList.add(result.data.icon_class);
+              icon.setAttribute('title', result.data.label);
+              icon.setAttribute('aria-label', result.data.label);
+            }
+          })
+          .catch(function(error) {
+            alert(error.message || 'Failed to toggle visibility.');
+          })
+          .finally(function() {
+            setBusy(button, false);
+          });
+      });
+    });
+  })();
+</script>
