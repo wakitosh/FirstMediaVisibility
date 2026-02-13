@@ -5,6 +5,8 @@
 /** @var int $perPage */
 /** @var string $sort */
 /** @var string $order */
+/** @var string $siteSlug */
+/** @var array $siteSlugs */
 
 $translate = $this->plugin('translate');
 $escape = $this->plugin('escapeHtml');
@@ -15,15 +17,18 @@ $page = max(1, (int) ($page ?? 1));
 $perPage = max(1, (int) ($perPage ?? 100));
 $sort = (string) ($sort ?? 'item_title');
 $order = (string) ($order ?? 'asc');
+$siteSlug = trim((string) ($siteSlug ?? ''));
+$siteSlugs = is_array($siteSlugs ?? null) ? $siteSlugs : [];
 
 $pages = (int) max(1, ceil($total / $perPage));
 
-$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order) {
+$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order, $siteSlug) {
   $base = [
     'page' => $page,
     'per_page' => $perPage,
     'sort' => $sort,
     'order' => $order,
+    'site_slug' => $siteSlug,
   ];
   return $this->url('admin/first-media-visibility', [], ['query' => array_merge($base, $overrides)]);
 };
@@ -52,10 +57,15 @@ if (isset($confirmForm)) {
     width: 100%;
   }
   .fmv-table .fmv-col-thumb {
-    width: 64px;
+    width: 112px;
   }
   .fmv-table .fmv-col-vis {
     width: 56px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .fmv-table .fmv-col-public {
+    width: 96px;
     text-align: right;
     white-space: nowrap;
   }
@@ -70,8 +80,9 @@ if (isset($confirmForm)) {
     white-space: normal;
   }
   .fmv-table .fmv-thumb {
-    width: 48px;
-    height: auto;
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
     display: block;
   }
 </style>
@@ -87,6 +98,17 @@ if (isset($confirmForm)) {
     value="<?= (int) $perPage ?>"
     style="width: 100px;"
   >
+  <label for="fmv-site-slug"><?= $escape($translate('Site slug for public links')) ?></label>
+  <select id="fmv-site-slug" name="site_slug" style="min-width: 220px;">
+    <option value=""><?= $escape($translate('Auto (first site of each item)')) ?></option>
+    <?php foreach ($siteSlugs as $availableSiteSlug): ?>
+      <?php $availableSiteSlug = trim((string) $availableSiteSlug); ?>
+      <?php if ($availableSiteSlug === '') continue; ?>
+      <option value="<?= $escapeAttr($availableSiteSlug) ?>" <?= $siteSlug === $availableSiteSlug ? 'selected' : '' ?>>
+        <?= $escape($availableSiteSlug) ?>
+      </option>
+    <?php endforeach; ?>
+  </select>
   <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
   <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
   <input type="hidden" name="page" value="1">
@@ -95,6 +117,16 @@ if (isset($confirmForm)) {
 </form>
 
 <?php if ($pages > 1): ?>
+  <nav class="pagination" style="margin: 0 0 12px; display:flex; gap:6px; align-items:center; flex-wrap: wrap;">
+    <?php if ($page > 1): ?>
+      <a class="button" href="<?= $escapeAttr($buildUrl(['page' => $page - 1])) ?>"><?= $escape($translate('Previous')) ?></a>
+    <?php endif; ?>
+    <span><?= $escape(sprintf($translate('Page %d / %d'), $page, $pages)) ?></span>
+    <?php if ($page < $pages): ?>
+      <a class="button" href="<?= $escapeAttr($buildUrl(['page' => $page + 1])) ?>"><?= $escape($translate('Next')) ?></a>
+    <?php endif; ?>
+  </nav>
+
   <form method="get" style="margin-bottom: 12px; display:flex; align-items:center; gap:6px; flex-wrap: wrap;">
     <label for="fmv-page-jump-top"><?= $escape($translate('Jump to page')) ?></label>
     <input
@@ -109,6 +141,7 @@ if (isset($confirmForm)) {
     <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
     <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
     <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+    <input type="hidden" name="site_slug" value="<?= $escapeAttr($siteSlug) ?>">
     <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
   </form>
 <?php endif; ?>
@@ -147,6 +180,7 @@ if (isset($confirmForm)) {
           <?= $escape($translate('First media name')) ?>
         </a>
       </th>
+      <th class="fmv-col-public"><?= $escape($translate('Public page')) ?></th>
       <th class="fmv-col-vis"><?= $escape($translate('Visibility')) ?></th>
       <th class="fmv-col-action"><?= $escape($translate('Action')) ?></th>
     </tr>
@@ -199,6 +233,21 @@ if (isset($confirmForm)) {
             </a>
           </td>
           <td class="fmv-media-title"><?= $escape((string) $row['media_title']) ?></td>
+          <td class="fmv-col-public">
+            <?php $publicItemUrl = trim((string) ($row['public_item_url'] ?? '')); ?>
+            <?php if ($publicItemUrl !== ''): ?>
+              <a
+                href="<?= $escapeAttr($publicItemUrl) ?>"
+                target="_blank"
+                rel="noopener"
+                class="o-icon-external"
+                title="<?= $escapeAttr($translate('View public page')) ?>"
+                aria-label="<?= $escapeAttr($translate('View public page')) ?>"
+              ></a>
+            <?php else: ?>
+              <span>-</span>
+            <?php endif; ?>
+          </td>
           <td class="fmv-col-vis">
             <?php if ($mediaId > 0): ?>
               <span
@@ -227,7 +276,7 @@ if (isset($confirmForm)) {
       <?php endforeach; ?>
     <?php else: ?>
       <tr>
-        <td colspan="5"><?= $escape($translate('No items found.')) ?></td>
+        <td colspan="6"><?= $escape($translate('No items found.')) ?></td>
       </tr>
     <?php endif; ?>
   </tbody>
@@ -256,6 +305,7 @@ if (isset($confirmForm)) {
       <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
       <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
       <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+      <input type="hidden" name="site_slug" value="<?= $escapeAttr($siteSlug) ?>">
       <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
     </form>
   </nav>

@@ -42,6 +42,19 @@ class IndexController extends AbstractActionController {
   public function indexAction(): ViewModel {
     $page = max(1, (int) $this->params()->fromQuery('page', 1));
     $perPage = (int) $this->params()->fromQuery('per_page', 50);
+    $preferredSiteSlug = trim((string) $this->params()->fromQuery('site_slug', ''));
+    $siteSlugs = [];
+    $siteSlugRows = $this->connection->fetchFirstColumn("SELECT slug FROM site WHERE slug IS NOT NULL AND slug != '' ORDER BY slug ASC");
+    foreach ($siteSlugRows as $slug) {
+      $slug = trim((string) $slug);
+      if ($slug !== '') {
+        $siteSlugs[] = $slug;
+      }
+    }
+    $siteSlugs = array_values(array_unique($siteSlugs));
+    if ($preferredSiteSlug !== '' && !in_array($preferredSiteSlug, $siteSlugs, TRUE)) {
+      $preferredSiteSlug = '';
+    }
     if ($perPage <= 0) {
       $perPage = 50;
     }
@@ -93,12 +106,15 @@ class IndexController extends AbstractActionController {
     );
 
     $mediaIds = [];
+    $itemIds = [];
     foreach ($rows as $row) {
+      $itemIds[] = (int) ($row['item_id'] ?? 0);
       if (!empty($row['media_id'])) {
         $mediaIds[] = (int) $row['media_id'];
       }
     }
     $mediaIds = array_values(array_unique($mediaIds));
+    $itemIds = array_values(array_unique(array_filter($itemIds)));
 
     $mediaRepresentations = [];
     if (!empty($mediaIds)) {
@@ -111,11 +127,61 @@ class IndexController extends AbstractActionController {
       }
     }
 
+    $itemRepresentations = [];
+    if (!empty($itemIds)) {
+      $response = $this->api()->search('items', [
+        'id' => $itemIds,
+        'limit' => count($itemIds),
+      ]);
+      foreach ($response->getContent() as $item) {
+        $itemRepresentations[(int) $item->id()] = $item;
+      }
+    }
+
     foreach ($rows as &$row) {
+      $itemId = (int) ($row['item_id'] ?? 0);
       $mediaId = (int) ($row['media_id'] ?? 0);
       $row['item_title'] = trim((string) ($row['item_title'] ?? ''));
       if ($row['item_title'] === '') {
         $row['item_title'] = '[' . $this->translate('Untitled') . ']';
+      }
+
+      $row['public_item_url'] = '';
+      if ($itemId > 0 && isset($itemRepresentations[$itemId])) {
+        try {
+          $itemRep = $itemRepresentations[$itemId];
+          $siteSlug = '';
+          $itemSiteSlugs = [];
+          if (method_exists($itemRep, 'sites')) {
+            $sites = $itemRep->sites();
+            if (is_array($sites) && !empty($sites)) {
+              foreach ($sites as $siteRep) {
+                if ($siteRep && method_exists($siteRep, 'slug')) {
+                  $slug = trim((string) ($siteRep->slug() ?? ''));
+                  if ($slug !== '') {
+                    $itemSiteSlugs[] = $slug;
+                  }
+                }
+              }
+            }
+          }
+
+          if ($preferredSiteSlug !== '') {
+            if (in_array($preferredSiteSlug, $itemSiteSlugs, TRUE)) {
+              $siteSlug = $preferredSiteSlug;
+            }
+          }
+          elseif (!empty($itemSiteSlugs)) {
+            $siteSlug = $itemSiteSlugs[0];
+          }
+
+          if ($siteSlug !== '') {
+            $row['public_item_url'] = (string) ($itemRep->siteUrl($siteSlug) ?? '');
+          }
+        }
+        catch (\Throwable $e) {
+          $row['public_item_url'] = '';
+        }
       }
 
       if ($mediaId > 0 && isset($mediaRepresentations[$mediaId])) {
@@ -141,6 +207,8 @@ class IndexController extends AbstractActionController {
       'total' => $total,
       'page' => $page,
       'perPage' => $perPage,
+      'siteSlug' => $preferredSiteSlug,
+      'siteSlugs' => $siteSlugs,
       'sort' => $sort,
       'order' => strtolower($order),
       'confirmForm' => $confirmForm,

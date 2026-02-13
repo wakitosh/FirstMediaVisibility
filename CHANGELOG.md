@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.1] - 2026-02-13
+
+### Added
+
+- Site slug selector dropdown populated from registered system sites.
+
+### Changed
+
+- First media thumbnail display size updated to `100x100` pixels in the admin list.
+
+### Fixed
+
+- MariaDB SQL syntax for site slug query (`slug != ''`).
+
 ## [0.1.0] - 2026-02-13
 
 ### Added
