@@ -265,6 +265,28 @@ class IndexController extends AbstractActionController {
 
     $newState = !$media->isPublic();
     $media->setIsPublic($newState);
+
+    if ($newState) {
+      // When the first media becomes public, make it primary.
+      $item->setPrimaryMedia($media);
+    }
+    else {
+      // When the first media becomes private, make the second media primary.
+      $secondMediaId = (int) $this->connection->fetchOne(
+        'SELECT id FROM media WHERE item_id = :item_id ORDER BY position ASC, id ASC LIMIT 1 OFFSET 1',
+        ['item_id' => (int) $item->getId()],
+        ['item_id' => \PDO::PARAM_INT]
+      );
+      if ($secondMediaId > 0) {
+        /** @var \Omeka\Entity\Media|null $secondMedia */
+        $secondMedia = $this->entityManager->find(Media::class, $secondMediaId);
+        $item->setPrimaryMedia($secondMedia ?: NULL);
+      }
+      else {
+        $item->setPrimaryMedia(NULL);
+      }
+    }
+
     $this->entityManager->flush();
 
     return new JsonModel([

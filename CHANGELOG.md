@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - First media thumbnail display size updated to `100x100` pixels in the admin list.
+- Toggling first media visibility now also updates the item's primary media (`private` -> second media, `public` -> first media).
 
 ### Fixed
 

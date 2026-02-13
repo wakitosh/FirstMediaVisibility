@@ -9,6 +9,7 @@ Omeka S admin module to review all items and quickly toggle visibility of each i
 - Sorts by item title / first media name.
 - Shows first media visibility with Omeka standard eye icon.
 - Toggles first media visibility inline (AJAX).
+- Synchronizes item primary media when toggling first media visibility.
 - Default rows per page: `50` (configurable from the page).
 - Page jump input at top and bottom (Go button + Enter submit).
 
@@ -35,6 +36,7 @@ Omeka S admin module to review all items and quickly toggle visibility of each i
 
 - If an item has no media, toggle is disabled for that row.
 - For safety, toggle action verifies the selected media is still the first media at update time.
+- Primary media behavior: when first media is set to private, the second media becomes primary (or none if absent); when set to public again, the first media is restored as primary.
 
 ## License
 
