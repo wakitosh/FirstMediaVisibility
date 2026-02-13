@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.2] - 2026-02-13
+
+### Added
+
+- Text filter input at the top of the list to narrow items by item title or first media name.
+
+### Changed
+
+- Filter query is preserved across sorting, pagination, rows-per-page changes, and page jumps.
+
 ## [0.1.1] - 2026-02-13
 
 ### Added

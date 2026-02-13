@@ -42,6 +42,7 @@ class IndexController extends AbstractActionController {
   public function indexAction(): ViewModel {
     $page = max(1, (int) $this->params()->fromQuery('page', 1));
     $perPage = (int) $this->params()->fromQuery('per_page', 50);
+    $filterText = trim((string) $this->params()->fromQuery('q', ''));
     $preferredSiteSlug = trim((string) $this->params()->fromQuery('site_slug', ''));
     $siteSlugs = [];
     $siteSlugRows = $this->connection->fetchFirstColumn("SELECT slug FROM site WHERE slug IS NOT NULL AND slug != '' ORDER BY slug ASC");
@@ -69,7 +70,32 @@ class IndexController extends AbstractActionController {
 
     $offset = ($page - 1) * $perPage;
 
-    $total = (int) $this->connection->fetchOne('SELECT COUNT(*) FROM item');
+    $whereSql = '';
+    $filterParams = [];
+    $filterTypes = [];
+    if ($filterText !== '') {
+      $whereSql = "\n      WHERE (ri.title LIKE :filter OR COALESCE(NULLIF(rm.title, ''), fm.source, '') LIKE :filter)";
+      $filterParams['filter'] = '%' . $filterText . '%';
+      $filterTypes['filter'] = \PDO::PARAM_STR;
+    }
+
+    $countSql = "
+      SELECT COUNT(*)
+      FROM item i
+      INNER JOIN resource ri
+        ON ri.id = i.id
+      LEFT JOIN media fm
+        ON fm.id = (
+          SELECT m2.id
+          FROM media m2
+          WHERE m2.item_id = i.id
+          ORDER BY m2.position ASC, m2.id ASC
+          LIMIT 1
+        )
+      LEFT JOIN resource rm
+        ON rm.id = fm.id" . $whereSql;
+
+    $total = (int) $this->connection->fetchOne($countSql, $filterParams, $filterTypes);
 
     $sortExpr = $sort === 'media_title'
       ? 'COALESCE(NULLIF(rm.title, \'\'), fm.source, \'\')'
@@ -95,14 +121,18 @@ class IndexController extends AbstractActionController {
         )
       LEFT JOIN resource rm
         ON rm.id = fm.id
+      {$whereSql}
       ORDER BY {$sortExpr} {$order}, i.id ASC
       LIMIT :limit OFFSET :offset
     ";
 
+    $params = array_merge($filterParams, ['limit' => $perPage, 'offset' => $offset]);
+    $types = array_merge($filterTypes, ['limit' => \PDO::PARAM_INT, 'offset' => \PDO::PARAM_INT]);
+
     $rows = $this->connection->fetchAllAssociative(
       $sql,
-      ['limit' => $perPage, 'offset' => $offset],
-      ['limit' => \PDO::PARAM_INT, 'offset' => \PDO::PARAM_INT]
+      $params,
+      $types
     );
 
     $mediaIds = [];
@@ -207,6 +237,7 @@ class IndexController extends AbstractActionController {
       'total' => $total,
       'page' => $page,
       'perPage' => $perPage,
+      'filterText' => $filterText,
       'siteSlug' => $preferredSiteSlug,
       'siteSlugs' => $siteSlugs,
       'sort' => $sort,

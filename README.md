@@ -7,6 +7,7 @@ Omeka S admin module to review all items and quickly toggle visibility of each i
 - Lists all items in admin with pagination.
 - Shows first media thumbnail, item title, and first media name.
 - Sorts by item title / first media name.
+- Filters list rows by item title or first media name.
 - Shows first media visibility with Omeka standard eye icon.
 - Toggles first media visibility inline (AJAX).
 - Synchronizes item primary media when toggling first media visibility.
@@ -29,8 +30,9 @@ Omeka S admin module to review all items and quickly toggle visibility of each i
 1. Open admin menu:
    - `First Media Visibility`
 2. Review rows and thumbnails.
-3. Click `Toggle` to switch first media visibility for that item.
-4. Use sort links and page controls to navigate large datasets.
+3. Use the top filter input to narrow rows by item title or media name.
+4. Click `Toggle` to switch first media visibility for that item.
+5. Use sort links and page controls to navigate large datasets.
 
 ## Notes
 

@@ -5,6 +5,7 @@
 /** @var int $perPage */
 /** @var string $sort */
 /** @var string $order */
+/** @var string $filterText */
 /** @var string $siteSlug */
 /** @var array $siteSlugs */
 
@@ -17,17 +18,19 @@ $page = max(1, (int) ($page ?? 1));
 $perPage = max(1, (int) ($perPage ?? 100));
 $sort = (string) ($sort ?? 'item_title');
 $order = (string) ($order ?? 'asc');
+$filterText = trim((string) ($filterText ?? ''));
 $siteSlug = trim((string) ($siteSlug ?? ''));
 $siteSlugs = is_array($siteSlugs ?? null) ? $siteSlugs : [];
 
 $pages = (int) max(1, ceil($total / $perPage));
 
-$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order, $siteSlug) {
+$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order, $filterText, $siteSlug) {
   $base = [
     'page' => $page,
     'per_page' => $perPage,
     'sort' => $sort,
     'order' => $order,
+    'q' => $filterText,
     'site_slug' => $siteSlug,
   ];
   return $this->url('admin/first-media-visibility', [], ['query' => array_merge($base, $overrides)]);
@@ -88,6 +91,15 @@ if (isset($confirmForm)) {
 </style>
 
 <form method="get" style="margin-bottom: 12px; display:flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+  <label for="fmv-filter-text"><?= $escape($translate('Filter')) ?></label>
+  <input
+    id="fmv-filter-text"
+    type="text"
+    name="q"
+    value="<?= $escapeAttr($filterText) ?>"
+    placeholder="<?= $escapeAttr($translate('Item title or media name')) ?>"
+    style="min-width: 280px;"
+  >
   <label for="fmv-per-page"><?= $escape($translate('Rows per page')) ?></label>
   <input
     id="fmv-per-page"
@@ -141,6 +153,7 @@ if (isset($confirmForm)) {
     <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
     <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
     <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+    <input type="hidden" name="q" value="<?= $escapeAttr($filterText) ?>">
     <input type="hidden" name="site_slug" value="<?= $escapeAttr($siteSlug) ?>">
     <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
   </form>
@@ -305,6 +318,7 @@ if (isset($confirmForm)) {
       <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
       <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
       <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
+      <input type="hidden" name="q" value="<?= $escapeAttr($filterText) ?>">
       <input type="hidden" name="site_slug" value="<?= $escapeAttr($siteSlug) ?>">
       <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
     </form>
