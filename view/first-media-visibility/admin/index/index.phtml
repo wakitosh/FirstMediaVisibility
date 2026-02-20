@@ -6,6 +6,8 @@
 /** @var string $sort */
 /** @var string $order */
 /** @var string $filterText */
+/** @var string $identifierText */
+/** @var string $visibilityFilter */
 /** @var string $siteSlug */
 /** @var array $siteSlugs */
 
@@ -19,18 +21,22 @@ $perPage = max(1, (int) ($perPage ?? 100));
 $sort = (string) ($sort ?? 'item_title');
 $order = (string) ($order ?? 'asc');
 $filterText = trim((string) ($filterText ?? ''));
+$identifierText = trim((string) ($identifierText ?? ''));
+$visibilityFilter = trim((string) ($visibilityFilter ?? 'all'));
 $siteSlug = trim((string) ($siteSlug ?? ''));
 $siteSlugs = is_array($siteSlugs ?? null) ? $siteSlugs : [];
 
 $pages = (int) max(1, ceil($total / $perPage));
 
-$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order, $filterText, $siteSlug) {
+$buildUrl = function (array $overrides = []) use ($page, $perPage, $sort, $order, $filterText, $visibilityFilter, $identifierText, $siteSlug) {
   $base = [
     'page' => $page,
     'per_page' => $perPage,
     'sort' => $sort,
     'order' => $order,
     'q' => $filterText,
+    'visibility' => $visibilityFilter,
+    'identifiers_text' => $identifierText,
     'site_slug' => $siteSlug,
   ];
   return $this->url('admin/first-media-visibility', [], ['query' => array_merge($base, $overrides)]);
@@ -110,6 +116,12 @@ if (isset($confirmForm)) {
     value="<?= (int) $perPage ?>"
     style="width: 100px;"
   >
+  <label for="fmv-visibility-filter"><?= $escape($translate('Visibility')) ?></label>
+  <select id="fmv-visibility-filter" name="visibility" style="min-width: 140px;">
+    <option value="all" <?= $visibilityFilter === 'all' ? 'selected' : '' ?>><?= $escape($translate('All')) ?></option>
+    <option value="public" <?= $visibilityFilter === 'public' ? 'selected' : '' ?>><?= $escape($translate('Public only')) ?></option>
+    <option value="private" <?= $visibilityFilter === 'private' ? 'selected' : '' ?>><?= $escape($translate('Private only')) ?></option>
+  </select>
   <label for="fmv-site-slug"><?= $escape($translate('Site slug for public links')) ?></label>
   <select id="fmv-site-slug" name="site_slug" style="min-width: 220px;">
     <option value=""><?= $escape($translate('Auto (first site of each item)')) ?></option>
@@ -124,6 +136,15 @@ if (isset($confirmForm)) {
   <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
   <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
   <input type="hidden" name="page" value="1">
+  <div style="flex-basis:100%;"></div>
+  <label for="fmv-identifiers-text" style="align-self:flex-start;"><?= $escape($translate('Item identifiers list')) ?></label>
+  <textarea
+    id="fmv-identifiers-text"
+    name="identifiers_text"
+    rows="4"
+    style="min-width: 460px; width: min(100%, 760px); font-family: monospace;"
+    placeholder="<?= $escapeAttr($translate('Paste item IDs / identifiers (newline, space, or comma separated).')) ?>"
+  ><?= $escape($identifierText) ?></textarea>
   <button type="submit" class="button"><?= $escape($translate('Apply')) ?></button>
   <span><?= $escape(sprintf($translate('Total items: %d'), $total)) ?></span>
 </form>
@@ -154,6 +175,8 @@ if (isset($confirmForm)) {
     <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
     <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
     <input type="hidden" name="q" value="<?= $escapeAttr($filterText) ?>">
+    <input type="hidden" name="visibility" value="<?= $escapeAttr($visibilityFilter) ?>">
+    <input type="hidden" name="identifiers_text" value="<?= $escapeAttr($identifierText) ?>">
     <input type="hidden" name="site_slug" value="<?= $escapeAttr($siteSlug) ?>">
     <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
   </form>
@@ -193,8 +216,31 @@ if (isset($confirmForm)) {
           <?= $escape($translate('First media name')) ?>
         </a>
       </th>
+      <th>
+        <?php
+        $modifiedSortUrl = $buildUrl([
+          'sort' => 'modified',
+          'order' => $nextOrderFor('modified'),
+          'page' => 1,
+        ]);
+        ?>
+        <a href="<?= $escapeAttr($modifiedSortUrl) ?>">
+          <?= $escape($translate('Last updated')) ?>
+        </a>
+      </th>
       <th class="fmv-col-public"><?= $escape($translate('Public page')) ?></th>
-      <th class="fmv-col-vis"><?= $escape($translate('Visibility')) ?></th>
+      <th class="fmv-col-vis">
+        <?php
+        $visibilitySortUrl = $buildUrl([
+          'sort' => 'visibility',
+          'order' => $nextOrderFor('visibility'),
+          'page' => 1,
+        ]);
+        ?>
+        <a href="<?= $escapeAttr($visibilitySortUrl) ?>">
+          <?= $escape($translate('Visibility')) ?>
+        </a>
+      </th>
       <th class="fmv-col-action"><?= $escape($translate('Action')) ?></th>
     </tr>
   </thead>
@@ -246,6 +292,10 @@ if (isset($confirmForm)) {
             </a>
           </td>
           <td class="fmv-media-title"><?= $escape((string) $row['media_title']) ?></td>
+          <td>
+            <?php $itemModified = trim((string) ($row['item_modified'] ?? '')); ?>
+            <?= $itemModified !== '' ? $escape($itemModified) : '-' ?>
+          </td>
           <td class="fmv-col-public">
             <?php $publicItemUrl = trim((string) ($row['public_item_url'] ?? '')); ?>
             <?php if ($publicItemUrl !== ''): ?>
@@ -289,7 +339,7 @@ if (isset($confirmForm)) {
       <?php endforeach; ?>
     <?php else: ?>
       <tr>
-        <td colspan="6"><?= $escape($translate('No items found.')) ?></td>
+        <td colspan="7"><?= $escape($translate('No items found.')) ?></td>
       </tr>
     <?php endif; ?>
   </tbody>
@@ -319,6 +369,8 @@ if (isset($confirmForm)) {
       <input type="hidden" name="sort" value="<?= $escapeAttr($sort) ?>">
       <input type="hidden" name="order" value="<?= $escapeAttr($order) ?>">
       <input type="hidden" name="q" value="<?= $escapeAttr($filterText) ?>">
+      <input type="hidden" name="visibility" value="<?= $escapeAttr($visibilityFilter) ?>">
+      <input type="hidden" name="identifiers_text" value="<?= $escapeAttr($identifierText) ?>">
       <input type="hidden" name="site_slug" value="<?= $escapeAttr($siteSlug) ?>">
       <button type="submit" class="button"><?= $escape($translate('Go')) ?></button>
     </form>

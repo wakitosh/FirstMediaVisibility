@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.3] - 2026-02-20
+
+### Added
+
+- Sorting by last updated datetime (`Last updated`).
+- Visibility filter control (`All` / `Public only` / `Private only`).
+- Identifier-list filter via textarea paste (newline/space/comma separated; no file upload).
+
+### Changed
+
+- Added sorting by visibility state from the `Visibility` column header.
+- New filters are preserved across pagination, sorting, rows-per-page changes, and page jumps.
+
 ## [0.1.2] - 2026-02-13
 
 ### Added

@@ -43,6 +43,8 @@ class IndexController extends AbstractActionController {
     $page = max(1, (int) $this->params()->fromQuery('page', 1));
     $perPage = (int) $this->params()->fromQuery('per_page', 50);
     $filterText = trim((string) $this->params()->fromQuery('q', ''));
+    $identifierText = trim((string) $this->params()->fromQuery('identifiers_text', ''));
+    $visibilityFilter = trim((string) $this->params()->fromQuery('visibility', 'all'));
     $preferredSiteSlug = trim((string) $this->params()->fromQuery('site_slug', ''));
     $siteSlugs = [];
     $siteSlugRows = $this->connection->fetchFirstColumn("SELECT slug FROM site WHERE slug IS NOT NULL AND slug != '' ORDER BY slug ASC");
@@ -62,21 +64,54 @@ class IndexController extends AbstractActionController {
     $perPage = min(1000, $perPage);
 
     $sort = (string) $this->params()->fromQuery('sort', 'item_title');
-    if (!in_array($sort, ['item_title', 'media_title'], TRUE)) {
+    if (!in_array($sort, ['item_title', 'media_title', 'modified', 'visibility'], TRUE)) {
       $sort = 'item_title';
+    }
+    if (!in_array($visibilityFilter, ['all', 'public', 'private'], TRUE)) {
+      $visibilityFilter = 'all';
     }
     $order = strtolower((string) $this->params()->fromQuery('order', 'asc'));
     $order = $order === 'desc' ? 'DESC' : 'ASC';
 
     $offset = ($page - 1) * $perPage;
 
-    $whereSql = '';
+    $whereParts = [];
     $filterParams = [];
     $filterTypes = [];
     if ($filterText !== '') {
-      $whereSql = "\n      WHERE (ri.title LIKE :filter OR COALESCE(NULLIF(rm.title, ''), fm.source, '') LIKE :filter)";
+      $whereParts[] = "(ri.title LIKE :filter OR COALESCE(NULLIF(rm.title, ''), fm.source, '') LIKE :filter)";
       $filterParams['filter'] = '%' . $filterText . '%';
       $filterTypes['filter'] = \PDO::PARAM_STR;
+    }
+
+    if ($visibilityFilter === 'public') {
+      $whereParts[] = 'rm.is_public = 1';
+    }
+    elseif ($visibilityFilter === 'private') {
+      $whereParts[] = 'rm.is_public = 0';
+    }
+
+    $identifierTokens = $this->parseIdentifiers($identifierText);
+    $identifierItemIds = $this->resolveItemIdsForTokens($identifierTokens);
+    if (!empty($identifierTokens)) {
+      if (empty($identifierItemIds)) {
+        $whereParts[] = '1 = 0';
+      }
+      else {
+        $idPlaceholders = [];
+        foreach ($identifierItemIds as $index => $identifierItemId) {
+          $paramName = 'identifier_item_id_' . $index;
+          $idPlaceholders[] = ':' . $paramName;
+          $filterParams[$paramName] = (int) $identifierItemId;
+          $filterTypes[$paramName] = \PDO::PARAM_INT;
+        }
+        $whereParts[] = 'i.id IN (' . implode(', ', $idPlaceholders) . ')';
+      }
+    }
+
+    $whereSql = '';
+    if (!empty($whereParts)) {
+      $whereSql = "\n      WHERE " . implode(' AND ', $whereParts);
     }
 
     $countSql = "
@@ -99,12 +134,17 @@ class IndexController extends AbstractActionController {
 
     $sortExpr = $sort === 'media_title'
       ? 'COALESCE(NULLIF(rm.title, \'\'), fm.source, \'\')'
-      : 'COALESCE(ri.title, \'\')';
+      : ($sort === 'modified'
+        ? 'COALESCE(ri.modified, ri.created)'
+        : ($sort === 'visibility'
+          ? 'COALESCE(rm.is_public, -1)'
+          : 'COALESCE(ri.title, \'\')'));
 
     $sql = "
       SELECT
         i.id AS item_id,
         ri.title AS item_title,
+        COALESCE(ri.modified, ri.created) AS item_modified,
         fm.id AS media_id,
         COALESCE(NULLIF(rm.title, ''), fm.source, '') AS media_title,
         rm.is_public AS media_is_public
@@ -238,12 +278,106 @@ class IndexController extends AbstractActionController {
       'page' => $page,
       'perPage' => $perPage,
       'filterText' => $filterText,
+      'identifierText' => $identifierText,
+      'visibilityFilter' => $visibilityFilter,
       'siteSlug' => $preferredSiteSlug,
       'siteSlugs' => $siteSlugs,
       'sort' => $sort,
       'order' => strtolower($order),
       'confirmForm' => $confirmForm,
     ]);
+  }
+
+  /**
+   * Parse identifiers from free text.
+   */
+  private function parseIdentifiers(string $text): array {
+    $tokens = preg_split('/[\r\n,\t\s]+/u', $text) ?: [];
+    $tokens = array_values(array_unique(array_filter(array_map(static function ($v) {
+      return trim((string) $v);
+    }, $tokens), static function ($v) {
+      return $v !== '';
+    })));
+    return $tokens;
+  }
+
+  /**
+   * Resolve identifier tokens into item IDs.
+   */
+  private function resolveItemIdsForTokens(array $tokens): array {
+    $itemIds = [];
+    foreach ($tokens as $token) {
+      foreach ($this->resolveItemIds((string) $token) as $itemId) {
+        $itemIds[] = (int) $itemId;
+      }
+    }
+    return array_values(array_unique(array_filter($itemIds)));
+  }
+
+  /**
+   * Resolve a token to one or more item ids.
+   */
+  private function resolveItemIds(string $token): array {
+    $token = trim($token);
+    if ($token === '') {
+      return [];
+    }
+
+    if (ctype_digit($token)) {
+      $id = (int) $token;
+      $exists = (int) $this->connection->fetchOne('SELECT COUNT(*) FROM item WHERE id = :id', ['id' => $id], ['id' => \PDO::PARAM_INT]);
+      return $exists > 0 ? [$id] : [];
+    }
+
+    $ids = $this->connection->fetchFirstColumn(
+      'SELECT DISTINCT i.id
+       FROM item i
+       INNER JOIN value v ON v.resource_id = i.id
+       INNER JOIN property p ON p.id = v.property_id
+       INNER JOIN vocabulary voc ON voc.id = p.vocabulary_id
+       WHERE voc.prefix = :vocab_prefix
+         AND p.local_name = :local_name
+         AND (v.value = :token OR v.uri = :token)
+       LIMIT 5',
+      [
+        'vocab_prefix' => 'dcterms',
+        'local_name' => 'identifier',
+        'token' => $token,
+      ],
+      [
+        'vocab_prefix' => \PDO::PARAM_STR,
+        'local_name' => \PDO::PARAM_STR,
+        'token' => \PDO::PARAM_STR,
+      ]
+    );
+    $ids = array_values(array_unique(array_map('intval', $ids ?: [])));
+    if (!empty($ids)) {
+      return $ids;
+    }
+
+    $ids = $this->connection->fetchFirstColumn(
+      'SELECT DISTINCT i.id
+       FROM item i
+       INNER JOIN value v ON v.resource_id = i.id
+       WHERE v.value = :token OR v.uri = :token
+       LIMIT 5',
+      ['token' => $token],
+      ['token' => \PDO::PARAM_STR]
+    );
+    $ids = array_values(array_unique(array_map('intval', $ids ?: [])));
+    if (!empty($ids)) {
+      return $ids;
+    }
+
+    $ids = $this->connection->fetchFirstColumn(
+      'SELECT DISTINCT m.item_id
+       FROM media m
+       WHERE m.source LIKE :token
+       LIMIT 5',
+      ['token' => '%' . $token . '%'],
+      ['token' => \PDO::PARAM_STR]
+    );
+    return array_values(array_unique(array_map('intval', $ids ?: [])));
   }
 
   /**
